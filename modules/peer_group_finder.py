@@ -166,12 +166,14 @@ class BasePeerFinder(ABC):
     """Interface abstraite pour les stratégies de recherche de comparables."""
 
     @abstractmethod
-    def find_peers(self, identifier: str, filters: CompanyFilter) -> list[PeerCompany]:
+    def find_peers(
+        self, identifier: str, filters: Optional[CompanyFilter] = None
+    ) -> list[PeerCompany]:
         """Retourne une liste d'entreprises comparables.
 
         Args:
             identifier: Ticker boursier ou nom d'entreprise selon la stratégie.
-            filters: Critères de secteur et de taille.
+            filters: Critères de secteur et de taille. Si None, aucun filtre appliqué.
 
         Returns:
             Liste d'objets PeerCompany.
@@ -192,12 +194,15 @@ class YFinancePeerFinder(BasePeerFinder):
     _MAX_RESULTS: int = 30
     _THROTTLE_SEC: float = 0.25  # Délai entre appels yfinance individuels
 
-    def find_peers(self, ticker: str, filters: CompanyFilter) -> list[PeerCompany]:
+    def find_peers(
+        self, ticker: str, filters: Optional[CompanyFilter] = None
+    ) -> list[PeerCompany]:
         """Identifie les pairs d'une société cotée.
 
         Args:
             ticker: Symbole boursier de référence (ex: "MC.PA", "AAPL").
             filters: Secteur cible et fourchettes optionnelles de CA / effectifs / market cap.
+                Si None, aucun filtre de taille ou de zone géographique n'est appliqué.
 
         Returns:
             Liste de PeerCompany, sans le ticker de référence.
@@ -206,6 +211,7 @@ class YFinancePeerFinder(BasePeerFinder):
             ValueError: Si le ticker est invalide ou si yfinance ne retourne
                 pas de clé sectorielle (industryKey / sectorKey).
         """
+        filters = filters or CompanyFilter()
         logger.info("Récupération des informations pour le ticker '%s'", ticker)
         try:
             ref_info: dict = yf.Ticker(ticker).info

@@ -21,7 +21,7 @@ class CompanyFilter(BaseModel):
             Insensible à la casse. Non applicable à Pappers.
     """
 
-    secteur: Optional[str] = Field(..., description="Secteur ou code NAF cible")
+    secteur: Optional[str] = Field(None, description="Secteur ou code NAF cible")
     min_ca: Optional[float] = Field(None, ge=0, description="CA minimum")
     max_ca: Optional[float] = Field(None, ge=0, description="CA maximum")
     min_effectifs: Optional[int] = Field(None, ge=0, description="Effectif minimum")
