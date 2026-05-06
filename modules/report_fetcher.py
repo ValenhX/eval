@@ -470,10 +470,21 @@ def _download_file(
 
     safe_prefix = _sanitize_filename(company_name)
 
-    if not base_filename.lower().endswith(".pdf"):
-        base_filename = f"{safe_prefix}_rapport.pdf"
-    elif safe_prefix and not base_filename.startswith(safe_prefix):
-        base_filename = f"{safe_prefix}_{base_filename}"
+    # Déduire l'extension réelle depuis le Content-Type de la réponse
+    content_type = resp.headers.get("Content-Type", "").lower()
+    if "pdf" in content_type:
+        real_ext = ".pdf"
+    elif "html" in content_type or "xhtml" in content_type:
+        real_ext = ".htm"
+    else:
+        url_ext = Path(urlparse(url).path).suffix.lower()
+        real_ext = url_ext if url_ext in (".pdf", ".htm", ".html", ".xbrl") else ".htm"
+
+    base_stem = Path(base_filename).stem
+    if safe_prefix:
+        base_filename = f"{safe_prefix}_rapport{real_ext}"
+    else:
+        base_filename = f"{base_stem}{real_ext}"
 
     dest = dest_dir / base_filename
     with open(dest, "wb") as fh:

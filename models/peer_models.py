@@ -21,14 +21,16 @@ class CompanyFilter(BaseModel):
             Insensible à la casse. Non applicable à Pappers.
     """
 
-    secteur: str = Field(..., description="Secteur ou code NAF cible")
+    secteur: Optional[str] = Field(..., description="Secteur ou code NAF cible")
     min_ca: Optional[float] = Field(None, ge=0, description="CA minimum")
     max_ca: Optional[float] = Field(None, ge=0, description="CA maximum")
     min_effectifs: Optional[int] = Field(None, ge=0, description="Effectif minimum")
     max_effectifs: Optional[int] = Field(None, ge=0, description="Effectif maximum")
     pays: Optional[str] = Field(None, description="Pays cible (ex: 'France', 'United States')")
     continent: Optional[str] = Field(None, description="Continent cible (ex: 'Europe', 'North America')")
-
+    min_market_cap: Optional[float] = Field(None, ge=0, description="Market Cap minimum")
+    max_market_cap: Optional[float] = Field(None, ge=0, description="Market Cap maximum")
+    
 
 class PeerCompany(BaseModel):
     """Entreprise comparable identifiée par le PeerGroupFinder.

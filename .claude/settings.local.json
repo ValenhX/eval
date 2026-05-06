@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import modules.kpi_extractor; print\\('OK'\\)\")"
+    ]
+  }
+}

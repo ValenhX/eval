@@ -61,10 +61,14 @@ _NUMERIC_FORMATS: dict[str, str] = {
 _HEADER_FILL = PatternFill(fill_type="solid", fgColor="1F3864")   # bleu marine
 _SUMMARY_FILL = PatternFill(fill_type="solid", fgColor="D6DCE4")  # gris clair
 _SEPARATOR_FILL = PatternFill(fill_type="solid", fgColor="BDD7EE") # bleu pâle
+_INITIAL_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")   # jaune pâle
+_PEERS_SEPARATOR_FILL = PatternFill(fill_type="solid", fgColor="E2EFDA")  # vert pâle
 _HEADER_FONT = Font(bold=True, color="FFFFFF", name="Calibri", size=11)
 _DATA_FONT = Font(name="Calibri", size=10)
 _SUMMARY_FONT = Font(bold=True, name="Calibri", size=10)
 _SEPARATOR_FONT = Font(bold=True, italic=True, name="Calibri", size=10, color="1F3864")
+_INITIAL_FONT = Font(bold=True, name="Calibri", size=10, color="7F6000")
+_PEERS_SEPARATOR_FONT = Font(bold=True, italic=True, name="Calibri", size=10, color="375623")
 
 _THIN_BORDER_SIDE = Side(style="thin", color="BFBFBF")
 _THIN_BORDER = Border(
@@ -120,12 +124,15 @@ class ExcelExporter:
         self,
         companies: list[dict],
         filename: str = _DEFAULT_OUTPUT_NAME,
+        initial_company: Optional[dict] = None,
     ) -> Path:
         """Génère le fichier Excel du benchmark.
 
         Args:
             companies: Sortie du Module 3 — liste de dicts contenant les KPIs.
             filename: Nom du fichier Excel de sortie.
+            initial_company: Société de référence (enrichie avec KPIs) à afficher
+                en tête de tableau avec un style distinct.
 
         Returns:
             Chemin absolu du fichier Excel généré.
@@ -144,7 +151,12 @@ class ExcelExporter:
         df = self._compute_missing_ratios(df)
         stats = self._compute_summary_stats(df)
 
-        self._write_excel(df, stats, output_path)
+        initial_df: Optional[pd.DataFrame] = None
+        if initial_company is not None:
+            initial_df = self._build_dataframe([initial_company])
+            initial_df = self._compute_missing_ratios(initial_df)
+
+        self._write_excel(df, stats, output_path, initial_df=initial_df)
 
         logger.info(
             "Excel exporté : %s (%d sociétés)", output_path, len(df)
@@ -251,6 +263,7 @@ class ExcelExporter:
         df: pd.DataFrame,
         stats: dict[str, dict[str, Optional[float]]],
         output_path: Path,
+        initial_df: Optional[pd.DataFrame] = None,
     ) -> None:
         """Écrit le DataFrame et les statistiques dans un fichier Excel formaté.
 
@@ -258,18 +271,26 @@ class ExcelExporter:
             df: DataFrame des entreprises avec les KPIs.
             stats: Statistiques de synthèse calculées par _compute_summary_stats.
             output_path: Chemin du fichier .xlsx de destination.
+            initial_df: DataFrame (1 ligne) de la société de référence, ou None.
         """
         wb = Workbook()
         ws = wb.active
         ws.title = "Benchmark KPIs"
 
         columns = list(df.columns)
-
         self._write_header_row(ws, columns)
-        last_data_row = self._write_data_rows(ws, df, columns)
+
+        current_row = 2
+        if initial_df is not None:
+            self._write_initial_row(ws, initial_df, columns, current_row)
+            current_row += 1
+            self._write_peers_separator(ws, current_row, len(columns))
+            current_row += 1
+
+        last_data_row = self._write_data_rows(ws, df, columns, start_row=current_row)
         self._write_separator_row(ws, last_data_row + 1, len(columns))
         self._write_summary_rows(ws, stats, columns, start_row=last_data_row + 2)
-        self._auto_fit_columns(ws, df, columns)
+        self._auto_fit_columns(ws, df, columns, initial_df=initial_df)
 
         # Gèle la première ligne (en-tête)
         ws.freeze_panes = "A2"
@@ -295,7 +316,7 @@ class ExcelExporter:
             cell.border = _THIN_BORDER
 
     def _write_data_rows(
-        self, ws, df: pd.DataFrame, columns: list[str]
+        self, ws, df: pd.DataFrame, columns: list[str], start_row: int = 2
     ) -> int:
         """Écrit les lignes de données avec alternance de couleurs.
 
@@ -303,13 +324,14 @@ class ExcelExporter:
             ws: Feuille openpyxl active.
             df: DataFrame des entreprises.
             columns: Noms de colonnes dans l'ordre d'affichage.
+            start_row: Première ligne disponible pour les données.
 
         Returns:
             Numéro de la dernière ligne écrite.
         """
         alt_fill = PatternFill(fill_type="solid", fgColor="EBF3FB")  # bleu très pâle
 
-        for row_idx, (_, row) in enumerate(df.iterrows(), start=2):
+        for row_idx, (_, row) in enumerate(df.iterrows(), start=start_row):
             ws.row_dimensions[row_idx].height = 18
             fill = alt_fill if row_idx % 2 == 0 else None
 
@@ -330,7 +352,56 @@ class ExcelExporter:
                 if col_name in _NUMERIC_FORMATS and value is not None:
                     cell.number_format = _NUMERIC_FORMATS[col_name]
 
-        return 1 + len(df)
+        return start_row - 1 + len(df)
+
+    def _write_initial_row(
+        self, ws, initial_df: pd.DataFrame, columns: list[str], row: int
+    ) -> None:
+        """Écrit la ligne de la société de référence avec un style doré distinct.
+
+        Args:
+            ws: Feuille openpyxl active.
+            initial_df: DataFrame (1 ligne) de la société initiale.
+            columns: Noms de colonnes dans l'ordre d'affichage.
+            row: Numéro de la ligne à écrire.
+        """
+        ws.row_dimensions[row].height = 18
+        data_row = initial_df.iloc[0]
+
+        for col_idx, col_name in enumerate(columns, start=1):
+            value = data_row[col_name] if col_name in data_row.index else None
+            if pd.isna(value) if not isinstance(value, str) else False:
+                value = None
+
+            cell = ws.cell(row=row, column=col_idx, value=value)
+            cell.font = _INITIAL_FONT
+            cell.fill = _INITIAL_FILL
+            cell.border = _THIN_BORDER
+            cell.alignment = _LEFT if col_name == "Société" else _CENTER
+
+            if col_name in _NUMERIC_FORMATS and value is not None:
+                cell.number_format = _NUMERIC_FORMATS[col_name]
+
+    def _write_peers_separator(self, ws, row: int, n_cols: int) -> None:
+        """Insère une ligne de séparation visuelle entre la société initiale et les comparables.
+
+        Args:
+            ws: Feuille openpyxl active.
+            row: Numéro de la ligne de séparation.
+            n_cols: Nombre de colonnes du tableau.
+        """
+        ws.row_dimensions[row].height = 16
+        label = "─── Groupe de comparables ───"
+        for col_idx in range(1, n_cols + 1):
+            cell = ws.cell(
+                row=row,
+                column=col_idx,
+                value=label if col_idx == 1 else None,
+            )
+            cell.fill = _PEERS_SEPARATOR_FILL
+            cell.font = _PEERS_SEPARATOR_FONT
+            cell.border = _THIN_BORDER
+            cell.alignment = _LEFT if col_idx == 1 else _CENTER
 
     def _write_separator_row(self, ws, row: int, n_cols: int) -> None:
         """Insère une ligne de séparation visuelle avant les statistiques.
@@ -394,39 +465,44 @@ class ExcelExporter:
                     cell.number_format = _NUMERIC_FORMATS[col_name]
 
     def _auto_fit_columns(
-        self, ws, df: pd.DataFrame, columns: list[str]
+        self,
+        ws,
+        df: pd.DataFrame,
+        columns: list[str],
+        initial_df: Optional[pd.DataFrame] = None,
     ) -> None:
         """Ajuste la largeur de chaque colonne à son contenu le plus long.
 
-        Prend en compte l'en-tête, les données, et les libellés de synthèse.
+        Prend en compte l'en-tête, la société initiale, les données, et les libellés de synthèse.
 
         Args:
             ws: Feuille openpyxl active.
-            df: DataFrame des entreprises.
+            df: DataFrame des entreprises comparables.
             columns: Noms de colonnes dans l'ordre d'affichage.
+            initial_df: DataFrame (1 ligne) de la société initiale, ou None.
         """
         summary_labels = [label for label, _ in _SUMMARY_LABELS]
 
         for col_idx, col_name in enumerate(columns, start=1):
             col_letter = get_column_letter(col_idx)
-
-            # Largeur de l'en-tête
             max_len = len(str(col_name))
 
-            # Largeur des données
-            if col_name in df.columns:
-                for val in df[col_name].dropna():
-                    cell_str = (
-                        f"{val:.2%}" if col_name == "Marge Brute"
-                        else f"{val:,.1f}" if col_name in ("CAPEX (M)", "Ratio Endettement")
-                        else str(val)
-                    )
-                    max_len = max(max_len, len(cell_str))
+            def _cell_str(val: object, col: str) -> str:
+                if col == "Marge Brute":
+                    return f"{val:.2%}"
+                if col in ("CAPEX (M)", "Ratio Endettement"):
+                    return f"{val:,.1f}"
+                return str(val)
 
-            # Largeur des libellés de synthèse (colonne 1 uniquement)
+            for source_df in ([initial_df, df] if initial_df is not None else [df]):
+                if source_df is not None and col_name in source_df.columns:
+                    for val in source_df[col_name].dropna():
+                        max_len = max(max_len, len(_cell_str(val, col_name)))
+
             if col_idx == 1:
                 for lbl in summary_labels:
                     max_len = max(max_len, len(lbl))
                 max_len = max(max_len, len("─── Synthèse du peer group ───"))
+                max_len = max(max_len, len("─── Groupe de comparables ───"))
 
             ws.column_dimensions[col_letter].width = min(max_len + 4, 60)

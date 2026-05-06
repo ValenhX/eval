@@ -5,19 +5,13 @@ from modules.kpi_extractor import KpiExtractorLLM
 from modules.excel_exporter import ExcelExporter
 
 def test_module_1_yahoo():
-
-    finder = PeerGroupFinder(pappers_api_key="votre_clé")  # clé optionnelle
-
+    finder = PeerGroupFinder()  # clé optionnelle
     # Coté (Yahoo Finance)
-    peers = finder.find_peers("HO.PA", CompanyFilter(secteur="Technology", continent="Europe"))
-
-    print(peers[:5])
+    peers = finder.find_peers("GAM.PA")
     return peers
 
 def test_module_1_pappers():
-
     finder = PeerGroupFinder(pappers_api_key="votre_clé")  # clé optionnelle
-
     # Français non coté (Pappers) — secteur = code NAF
     peers = finder.find_peers(
         "SUD EST BETON",
@@ -28,10 +22,10 @@ def test_module_1_pappers():
     return peers
 
 def test_module_2(peers):
-
     fetcher = ReportFetcher()
     enriched = fetcher.fetch_all(peers)
     print(enriched)
+    return enriched
 
 
 def test_module_3(enriched_companies):
@@ -46,14 +40,32 @@ def test_module_3(enriched_companies):
     return kpi_data
 
 
-def test_module_4(kpi_data):
+def test_module_4(kpi_data, initial_company=None):
     exporter = ExcelExporter()
-    path = exporter.export(kpi_data)
+    path = exporter.export(kpi_data, initial_company=initial_company)
     print(f"Excel généré : {path}")
     return path
 
 
-test_data=[{'nom': 'TPR', 'ticker': 'TPR', 'url_investisseur': 'https://finance.yahoo.com/quote/TPR'}, {'nom': 'LVMH', 'ticker': 'MC.PA', 'url_investisseur': 'https://finance.yahoo.com/quote/MC.PA'}]
+def stack1():
+    company_init={'nom': 'Thales', 'ticker': 'HO.PA', 'url_investisseur': 'https://finance.yahoo.com/quote/HO.PA'}
 
-test_module_1_yahoo()
-#test_module_2(test_data)
+    #peers = test_module_1_yahoo()
+    #enriched_companies = test_module_2(peers)
+    enriched_companies=[{'nom': 'BWX Technologies, Inc.', 'ticker': 'BWXT', 'url_investisseur': 'https://finance.yahoo.com/quote/BWXT', 'chemin_pdf': 'data\\reports\\BWX_Technologies_Inc_rapport.htm'}, {'nom': 'Textron Inc.', 'ticker': 'TXT', 'url_investisseur': 'https://finance.yahoo.com/quote/TXT', 'chemin_pdf': 'data\\reports\\Textron_Inc_rapport.htm'}, {'nom': 'Arxis, Inc.', 'ticker': 'ARXS', 'url_investisseur': 'https://finance.yahoo.com/quote/ARXS', 'chemin_pdf': 'data\\reports\\Arxis_Inc_rapport.htm'}, {'nom': 'Planet Labs PBC', 'ticker': 'PL', 'url_investisseur': 'https://finance.yahoo.com/quote/PL', 'chemin_pdf': 'data\\reports\\Planet_Labs_PBC_rapport.htm'}, {'nom': 'Huntington Ingalls Industries, ', 'ticker': 'HII', 'url_investisseur': 'https://finance.yahoo.com/quote/HII', 'chemin_pdf': 'data\\reports\\Huntington_Ingalls_Industries_rapport.htm'}]
+
+    # Récupération du rapport et extraction des KPIs de la société initiale
+    enriched_init = test_module_2([company_init])
+    extractor_init = KpiExtractorLLM(model="gpt-4o-mini")
+    company_init_with_kpis = extractor_init.extract_one_company(enriched_init[0])
+
+    kpi_data=test_module_3(enriched_companies)
+    test_module_4(kpi_data, initial_company=company_init_with_kpis)
+
+def stack2():
+    peers = test_module_1_yahoo()
+    enriched_companies = test_module_2(peers)
+    kpi_data=test_module_3(enriched_companies)
+    test_module_4(kpi_data)
+
+stack2()

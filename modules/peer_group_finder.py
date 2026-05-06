@@ -197,7 +197,7 @@ class YFinancePeerFinder(BasePeerFinder):
 
         Args:
             ticker: Symbole boursier de référence (ex: "MC.PA", "AAPL").
-            filters: Secteur cible et fourchettes optionnelles de CA / effectifs.
+            filters: Secteur cible et fourchettes optionnelles de CA / effectifs / market cap.
 
         Returns:
             Liste de PeerCompany, sans le ticker de référence.
@@ -239,6 +239,8 @@ class YFinancePeerFinder(BasePeerFinder):
                 filters.max_effectifs,
                 filters.pays,
                 filters.continent,
+                filters.min_market_cap,
+                filters.max_market_cap,
             ]
         )
         if needs_enrichment:
@@ -286,6 +288,9 @@ class YFinancePeerFinder(BasePeerFinder):
         if industry_key:
             try:
                 df: pd.DataFrame = yf.Industry(industry_key).top_companies
+                df = pd.concat([df, yf.Industry(industry_key).top_growth_companies], )
+                df = pd.concat([df, yf.Industry(industry_key).top_performing_companies])
+                df.drop_duplicates(inplace=True)
                 if df is not None and not df.empty:
                     return df.reset_index().to_dict("records")
             except Exception as exc:
@@ -326,7 +331,6 @@ class YFinancePeerFinder(BasePeerFinder):
             Candidats enrichis passant tous les filtres de taille.
         """
         filtered: list[dict] = []
-
         for candidate in candidates:
             symbol: str = (candidate.get("symbol") or candidate.get("Symbol") or "").strip()
             if not symbol or symbol.upper() == exclude_ticker:
@@ -341,6 +345,7 @@ class YFinancePeerFinder(BasePeerFinder):
             revenue: Optional[float] = info.get("totalRevenue")
             employees: Optional[int] = info.get("fullTimeEmployees")
             country: Optional[str] = info.get("country")
+            marketCap: Optional[float] = info.get("marketCap")
 
             if filters.min_ca is not None and revenue is not None:
                 if revenue < filters.min_ca:
@@ -353,6 +358,12 @@ class YFinancePeerFinder(BasePeerFinder):
                     continue
             if filters.max_effectifs is not None and employees is not None:
                 if employees > filters.max_effectifs:
+                    continue
+            if filters.min_market_cap is not None and marketCap is not None:
+                if marketCap < filters.min_market_cap:
+                    continue
+            if filters.max_market_cap is not None and marketCap is not None:
+                if marketCap > filters.max_market_cap:
                     continue
 
             if filters.pays is not None:
