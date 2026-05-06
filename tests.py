@@ -7,7 +7,7 @@ from modules.excel_exporter import ExcelExporter
 def test_module_1_yahoo():
     finder = PeerGroupFinder()  # clé optionnelle
     # Coté (Yahoo Finance)
-    peers = finder.find_peers("GAM.PA")
+    peers = finder.find_peers("NVTS")
     return peers
 
 def test_module_1_pappers():
@@ -18,13 +18,11 @@ def test_module_1_pappers():
         CompanyFilter(secteur="4120A", min_ca=5_000_000, max_ca=50_000_000),
         use_pappers=True,
     )
-    print(peers)
     return peers
 
 def test_module_2(peers):
     fetcher = ReportFetcher()
     enriched = fetcher.fetch_all(peers)
-    print(enriched)
     return enriched
 
 

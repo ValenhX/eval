@@ -428,14 +428,16 @@ class PappersPeerFinder(BasePeerFinder):
         """
         self._api_key = api_key
 
-    def find_peers(self, company_name: str, filters: CompanyFilter) -> list[PeerCompany]:
+    def find_peers(
+        self, company_name: str, filters: Optional[CompanyFilter] = None
+    ) -> list[PeerCompany]:
         """Recherche des entreprises françaises comparables via Pappers.
 
         Args:
             company_name: Nom de la société de référence (pour le log uniquement).
             filters: `secteur` doit être un code NAF/APE (ex: "4120A").
                 Les fourchettes de CA et d'effectifs sont converties en
-                codes de tranches Pappers automatiquement.
+                codes de tranches Pappers automatiquement. Si None, aucun filtre appliqué.
 
         Returns:
             Liste de PeerCompany avec des URLs de profil Pappers.
@@ -444,6 +446,7 @@ class PappersPeerFinder(BasePeerFinder):
             requests.HTTPError: En cas d'erreur HTTP de l'API Pappers.
             requests.RequestException: En cas d'échec réseau.
         """
+        filters = filters or CompanyFilter()
         if filters.pays is not None and filters.pays.lower() not in ("france", "fr"):
             logger.warning(
                 "PappersPeerFinder ne couvre que la France ; "
@@ -575,7 +578,7 @@ class PeerGroupFinder:
     def find_peers(
         self,
         identifier: str,
-        filters: CompanyFilter,
+        filters: Optional[CompanyFilter] = None,
         use_pappers: bool = False,
     ) -> list[dict]:
         """Identifie les entreprises comparables et retourne un résultat sérialisable.
@@ -583,6 +586,7 @@ class PeerGroupFinder:
         Args:
             identifier: Ticker boursier (Yahoo Finance) ou nom d'entreprise (Pappers).
             filters: CompanyFilter avec secteur et fourchettes de taille optionnelles.
+                Si None, aucun filtre n'est appliqué (retourne tous les pairs du secteur).
             use_pappers: Si True, route vers l'API Pappers (sociétés françaises).
 
         Returns:

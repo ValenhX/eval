@@ -23,7 +23,7 @@ Extraction PDF : pdfplumber.
 Extraction IA : langchain, couplé à pydantic pour forcer un output JSON structuré.
 Données et Export : pandas, openpyxl.
 
-## Architecture du Pipeline (Modules à développer) :
+## Architecture du Pipeline :
 
 Module 1 : PeerGroupFinder
 Input : Un ticker (ex: "AAPL" ou "SUD EST BETON" si API Pappers), un secteur cible, et des fourchettes (CA, effectifs).
@@ -81,41 +81,76 @@ Architecture du module 2
       └── _scrape_for_pdf() : score chaque lien <a>
           (mots-clés + bonus .pdf) → télécharge le meilleur
 
-Architecture du module 3
-  ┌──────────────────┬──────────────────────────────────────────────────────────────────────┐  
-  │      Classe      │                                 Rôle                                 │
-  ├──────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ KpiResult        │ Schéma Pydantic — capex, marge_brute, ratio_endettement, devise,     │
-  │                  │ annee_exercice, source                                               │
-  ├──────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ PdfTextExtractor │ Extraction pdfplumber — pages financières en priorité (mots-clés),   │
-  │                  │ fallback 10 premières pages                                          │
-  ├──────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ LlmKpiExtractor  │ Chaîne LangChain — ChatOpenAI.with_structured_output(KpiResult)      │
-  │                  │ garantit un JSON validé                                              │
-  ├──────────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ KpiExtractorLLM  │ Orchestrateur (point d'entrée) — extract_all(companies) et           │
-  │                  │ extract_one_company(company)                                         │
-  └──────────────────┴──────────────────────────────────────────────────────────────────────┘
+  Note : _download_file() déduit l'extension réelle depuis Content-Type (PDF vs HTM/XBRL).
 
-Architecture du module 4
-  ┌───────────────────────────────┬────────────────────────────────────────────────────────┐   
-  │            Méthode            │                          Rôle                          │ 
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ export(companies, filename)   │ Point d'entrée — orchestre les 3 étapes                │
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ _build_dataframe(companies)   │ Sélectionne et renomme les colonnes via _COLUMN_MAP,   │
-  │                               │ convertit les types                                    │
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ _compute_missing_ratios(df)   │ Point d'extension pour dériver des ratios depuis       │
-  │                               │ données brutes ; logue les NaN                         │
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ _compute_summary_stats(df)    │ Calcule médiane, moyenne, min, max sur les 3 colonnes  │
-  │                               │ numériques                                             │
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ _write_excel(df, stats, path) │ Coordonne l'écriture openpyxl (header → données →      │
-  │                               │ séparateur → synthèse)                                 │
-  ├───────────────────────────────┼────────────────────────────────────────────────────────┤
-  │ _auto_fit_columns(ws, df,     │ Ajuste chaque largeur colonne au contenu le plus long  │
-  │ cols)                         │ (plafond 60 car.)                                      │
-  └───────────────────────────────┴────────────────────────────────────────────────────────┘
+### Architecture du module 3
+
+  Stratégie par type de fichier :
+
+  Fichier .htm / .html / .xbrl -> XbrlKpiExtractor en premier (sans LLM)
+    Si >= 2 KPIs trouvés -> retourne directement
+    Sinon -> bascule sur TextExtractor (HtmlTextExtractor) + LlmKpiExtractor
+  Fichier .pdf -> TextExtractor (PdfTextExtractor) + LlmKpiExtractor directement
+
+  Classes :
+
+  KpiResult
+    Schéma Pydantic : capex, marge_brute, ratio_endettement, devise, annee_exercice, source
+
+  PdfTextExtractor
+    Extraction pdfplumber — pages financières en priorité (mots-clés), fallback 10 premières pages
+
+  HtmlTextExtractor
+    Extraction BeautifulSoup sur HTML/iXBRL — supprime le bruit (script/style),
+    sélectionne les lignes proches des mots-clés financiers
+
+  TextExtractor
+    Routeur — délègue à PdfTextExtractor ou HtmlTextExtractor selon l'extension du fichier
+
+  XbrlKpiExtractor
+    Extraction directe iXBRL sans LLM — parse ix:nonFraction, résout les contextes
+    annuels/instantanés, couvre CAPEX / GrossProfit / Revenues / Debt / Equity
+    via concepts US-GAAP. is_sufficient() vérifie qu'au moins 2 KPIs sont trouvés.
+
+  LlmKpiExtractor
+    Chaîne LangChain — ChatOpenAI.with_structured_output(KpiResult) garantit un JSON validé
+
+  KpiExtractorLLM
+    Orchestrateur (point d'entrée) — extract_all(companies), extract_one_company(company),
+    _extract_one() + _try_xbrl()
+
+### Architecture du module 4
+
+  export() accepte un paramètre optionnel `initial_company` (société de référence) affichée
+  en tête de tableau avec un style doré distinct, séparée du peer group par une ligne
+  visuelle "--- Groupe de comparables ---".
+
+  Méthodes :
+
+  export(companies, filename, initial_company)
+    Point d'entrée — orchestre toutes les étapes
+
+  _build_dataframe(companies)
+    Sélectionne et renomme les colonnes via _COLUMN_MAP, convertit les types
+
+  _compute_missing_ratios(df)
+    Point d'extension pour dériver des ratios depuis données brutes ; logue les NaN
+
+  _compute_summary_stats(df)
+    Calcule médiane, moyenne, min, max sur les 3 colonnes numériques
+
+  _write_excel(df, stats, path, initial_df)
+    Coordonne l'écriture openpyxl : société initiale -> séparateur -> peers -> synthèse
+
+  _write_initial_row()
+    Ligne société de référence (fond jaune pâle, police gras doré)
+
+  _write_peers_separator()
+    Ligne "--- Groupe de comparables ---" (fond vert pâle)
+
+  _write_separator_row()
+    Ligne "--- Synthèse du peer group ---" (fond bleu pâle)
+
+  _auto_fit_columns(ws, df, cols, initial_df)
+    Ajuste chaque largeur colonne au contenu le plus long (plafond 60 car.)
+    Prend en compte initial_df, les données du peer group et les libellés de synthèse
